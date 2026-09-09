@@ -1,0 +1,18 @@
+# Terraform
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+*.tfplan
+
+# Variables
+*.auto.tfvars
+
+# Logs
+*.log
+
+# Local overrides
+override.tf
+override.tf.json
+
+# Terraform lock file
+#.terraform.lock.hcl

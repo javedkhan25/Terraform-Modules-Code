@@ -1,0 +1,146 @@
+trigger: none
+
+# trigger:
+#   branches:
+#     include:
+#       - main
+#       - develop
+#       - release/*
+
+# pr:
+#   branches:
+#     include:
+#       - main
+#       - develop
+
+variables:
+- group: Platform-Infrastructure-Prod
+
+# pool:
+#   name: Default
+#   demands:
+#     - Agent.Name -equals ADO-VM
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+stages:
+- stage: Terraform_Install_To_Plan
+  displayName: 'Terraform Install, Init, validate, Plan, Manual Approval'
+  jobs:
+  - job: 
+    displayName: 'Terraform Install, Init, validate, Plan, Manual Approval'
+    steps:
+# ==================================================
+# TERRAFORM INstall on Microsoft Agent
+# ==================================================
+    - task: TerraformInstaller@1
+      displayName: 'Terraform Install'
+      inputs:
+        terraformVersion: 'latest'
+
+    - bash: |
+        which terraform
+        terraform version
+      displayName: 'Verify Terraform Installation'
+
+# ==================================================
+# TERRAFORM INIT
+# ==================================================
+    - task: TerraformTask@5
+      displayName: 'Terraform Init'
+      inputs:
+        provider: 'azurerm'
+        command: 'init'
+        workingDirectory: '$(System.DefaultWorkingDirectory)/terraform/environments/prod'
+        backendServiceArm: 'Terraform-SC'
+        backendAzureRmStorageAccountName: 'sttfstateprod252757'
+        backendAzureRmContainerName: 'tfstate'
+        backendAzureRmKey: 'prod.terraform.tfstate'
+
+# ==================================================
+# TERRAFORM VALIDATE
+# ==================================================
+    - task: TerraformTask@5
+      displayName: 'Terraform Validate'
+      inputs:
+        provider: 'azurerm'
+        command: 'validate'
+        workingDirectory: '$(System.DefaultWorkingDirectory)/terraform/environments/prod'
+
+# ==================================================
+# TERRAFORM PLAN
+# ==================================================
+    - task: TerraformTask@5
+      displayName: 'Terraform Plan'
+      inputs:
+        provider: 'azurerm'
+        command: 'plan'
+        environmentServiceNameAzureRM: 'Terraform-SC'
+        workingDirectory: '$(System.DefaultWorkingDirectory)/terraform/environments/prod'
+        commandOptions: >
+          -var="postgres_admin_user=$(postgres_admin_user)"
+          -var="postgres_admin_password=$(postgres_admin_password)"
+
+# ==================================================
+# MANUAL APPROVAL
+# ==================================================
+- stage: Approval_Stage
+  displayName: 'Manual Approval'
+  jobs:
+  - deployment: ApprovalGate
+    environment: 'Production'
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - script: echo "Waiting for Manual Approval"
+
+# ==================================================
+# TERRAFORM APPLY
+# ==================================================
+- stage: TerraformApply
+  displayName: 'Terraform Apply'
+
+  dependsOn: Approval_Stage
+  condition: succeeded()
+
+  jobs:
+  - job: Apply
+    steps:
+#############################################################################################################
+# Terraform install and init is executed again in the Apply stage because each stage/job runs independently and does not retain the .terraform workspace from previous stages.
+    - task: TerraformInstaller@1
+      displayName: Terraform install On Apply Stage
+      inputs:
+        terraformVersion: 'latest'
+
+    - task: TerraformTask@5
+      displayName: Terraform init On Apply Stage
+      inputs:
+        provider: 'azurerm'
+        command: 'init'
+        workingDirectory: '$(System.DefaultWorkingDirectory)/terraform/environments/prod'
+        backendServiceArm: 'Terraform-SC'
+        backendAzureRmStorageAccountName: 'sttfstateprod252757'
+        backendAzureRmContainerName: 'tfstate'
+        backendAzureRmKey: 'prod.terraform.tfstate'
+########################################################################################################
+    - task: TerraformTask@5
+      displayName: 'Terraform Apply'
+      inputs:
+        provider: 'azurerm'
+        command: 'apply'
+        environmentServiceNameAzureRM: 'Terraform-SC'
+        workingDirectory: '$(System.DefaultWorkingDirectory)/terraform/environments/prod'
+        commandOptions: >
+          -auto-approve
+          -var="postgres_admin_user=$(postgres_admin_user)"
+          -var="postgres_admin_password=$(postgres_admin_password)"
+    - task: TerraformTask@5
+      displayName: Terraform Output
+      inputs:
+        provider: 'azurerm'
+        command: 'output'
+        workingDirectory: '$(System.DefaultWorkingDirectory)/terraform/environments/prod'
+        environmentServiceNameAzureRM: 'Terraform-SC'

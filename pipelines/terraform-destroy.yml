@@ -1,0 +1,36 @@
+trigger: none
+
+variables:
+- group: Platform-Infrastructure-Prod
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+steps:
+- task: TerraformInstaller@1
+  displayName: Terraform Install
+  inputs:
+    terraformVersion: 'latest'
+
+- task: TerraformTask@5
+  displayName: 'Terraform Init'
+  inputs:
+    provider: 'azurerm'
+    command: 'init'
+    workingDirectory: '$(System.DefaultWorkingDirectory)/terraform/environments/prod'
+    backendServiceArm: 'Terraform-SC'
+    backendAzureRmStorageAccountName: 'sttfstateprod252757'
+    backendAzureRmContainerName: 'tfstate'
+    backendAzureRmKey: 'prod.terraform.tfstate'
+
+- task: TerraformTask@5
+  displayName: 'Terraform Destroy'
+  inputs:
+    provider: 'azurerm'
+    command: 'destroy'
+    environmentServiceNameAzureRM: 'Terraform-SC'
+    workingDirectory: '$(System.DefaultWorkingDirectory)/terraform/environments/prod'
+    commandOptions: >
+      -auto-approve
+      -var="postgres_admin_user=$(postgres_admin_user)"
+      -var="postgres_admin_password=$(postgres_admin_password)"
